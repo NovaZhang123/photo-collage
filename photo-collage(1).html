@@ -1,0 +1,2549 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>图片拼图打印工具</title>
+<style>
+  :root {
+    --bg: #e8e8e8;
+    --card: #ffffff;
+    --text: #1a1a1a;
+    --text-muted: #666;
+    --accent: #4a90d9;
+    --accent-hover: #357abd;
+    --crop-accent: #e08a3e;
+    --border: #d0d0d0;
+    --radius: 8px;
+    --shadow: 0 2px 12px rgba(0,0,0,0.12);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* ===== Header ===== */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 20px;
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    height: 48px;
+    flex-shrink: 0;
+  }
+  .header-title { display: flex; align-items: baseline; gap: 8px; }
+  .header h1 { font-size: 16px; font-weight: 650; }
+  .header-subtitle { font-size: 11px; color: #999; }
+  .header-actions { display: flex; gap: 6px; }
+
+  .btn {
+    padding: 6px 14px; border: none; border-radius: var(--radius);
+    font-size: 13px; cursor: pointer; transition: all 0.15s; font-weight: 500;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-outline { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+  .btn-outline:hover { background: #f0f0f0; }
+  .btn-accent-outline { background: white; color: var(--accent); border: 1px solid var(--accent); }
+  .btn-accent-outline:hover { background: rgba(74,144,217,0.08); }
+  .btn-layout-dirty { background: var(--accent); color: white; border-color: var(--accent); }
+  .btn-layout-dirty:hover { background: var(--accent-hover); }
+  .btn:disabled { opacity: 0.35; cursor: not-allowed; pointer-events: none; }
+
+  /* ===== Layout ===== */
+  .app-layout { display: flex; height: calc(100vh - 48px); }
+
+  /* ===== Sidebar ===== */
+  .sidebar {
+    width: 250px; background: var(--card); border-right: 1px solid var(--border);
+    padding: 12px; overflow-y: auto; flex-shrink: 0;
+  }
+  .sidebar-section { margin-bottom: 16px; }
+  .sidebar-section h3 {
+    font-size: 11px; font-weight: 700; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 8px;
+  }
+
+  /* Upload */
+  .upload-area {
+    border: 2px dashed var(--border); border-radius: var(--radius);
+    padding: 20px 12px; text-align: center; cursor: pointer; transition: all 0.2s;
+  }
+  .upload-area:hover, .upload-area.dragover {
+    border-color: var(--accent); background: rgba(74,144,217,0.04);
+  }
+  .upload-area .icon { font-size: 28px; display: block; margin-bottom: 4px; }
+  .upload-area .label { font-size: 13px; color: var(--text-muted); }
+  .upload-area .sublabel { font-size: 11px; color: #999; margin-top: 2px; }
+
+  /* Thumbnails */
+  .thumb-list {
+    display: flex; flex-wrap: wrap; gap: 4px; max-height: 200px;
+    overflow-y: auto; padding: 2px;
+  }
+  .thumb-item {
+    width: 48px; height: 48px; border-radius: 4px; overflow: hidden;
+    cursor: grab; position: relative; border: 2px solid transparent; transition: border-color 0.15s;
+    flex-shrink: 0;
+  }
+  .thumb-item:hover { border-color: var(--accent); }
+  .thumb-item.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .thumb-item.dragging { opacity: 0.3; }
+  .thumb-item.drag-over { border-color: var(--accent); border-style: dashed; }
+  .thumb-item img { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+  .thumb-item .remove-btn {
+    position: absolute; top: 0; right: 0; width: 16px; height: 16px;
+    background: rgba(0,0,0,0.65); color: white; border: none; border-radius: 0 0 0 4px;
+    font-size: 10px; cursor: pointer; display: none; align-items: center; justify-content: center;
+  }
+  .thumb-item:hover .remove-btn { display: flex; }
+
+  /* Controls */
+  .control-row {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+  }
+  .control-row label { font-size: 12px; color: var(--text); white-space: nowrap; }
+  .control-row .value {
+    font-size: 11px; color: var(--text-muted); min-width: 32px; text-align: right;
+  }
+  input[type="range"] { flex: 1; margin: 0 6px; accent-color: var(--accent); height: 4px; }
+  input[type="color"] {
+    width: 28px; height: 24px; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; padding: 1px;
+  }
+  select {
+    width: 100%; padding: 5px 6px; border: 1px solid var(--border); border-radius: 4px;
+    font-size: 12px; background: var(--card); color: var(--text);
+  }
+
+  .count-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    background: var(--accent); color: white; border-radius: 9px;
+    font-size: 10px; font-weight: 700; margin-left: 4px;
+  }
+
+  .hint { font-size: 11px; color: #999; margin-top: 2px; }
+
+  .quick-note {
+    margin-top: 8px; padding: 7px 9px; border-radius: 6px;
+    background: #f5f7fa; color: #777; font-size: 10px; line-height: 1.45;
+  }
+  .advanced-settings {
+    margin: 2px 0 14px; border-top: 1px solid #ececec; border-bottom: 1px solid #ececec;
+  }
+  .advanced-settings summary {
+    padding: 10px 2px; cursor: pointer; color: var(--text-muted);
+    font-size: 11px; font-weight: 700; letter-spacing: .4px;
+    list-style: none;
+  }
+  .advanced-settings summary::-webkit-details-marker { display: none; }
+  .advanced-settings summary::after { content: '＋'; float: right; color: #aaa; font-size: 13px; }
+  .advanced-settings[open] summary::after { content: '－'; }
+  .advanced-content { padding: 2px 0 12px; }
+  .advanced-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 10px; }
+  .advanced-actions .btn { justify-content: center; padding-left: 6px; padding-right: 6px; }
+  .layout-status {
+    position: fixed; left: 50%; top: 58px; transform: translate(-50%, -6px);
+    z-index: 500; padding: 6px 11px; border-radius: 14px;
+    color: white; background: rgba(24,24,24,.78); font-size: 11px;
+    opacity: 0; pointer-events: none; transition: opacity .18s, transform .18s;
+  }
+  .layout-status.visible { opacity: 1; transform: translate(-50%, 0); }
+
+  /* ===== Main Viewport ===== */
+  .main-viewport {
+    flex: 1; overflow: auto; display: flex; justify-content: center;
+    align-items: flex-start; padding: 20px; background: var(--bg);
+  }
+  .page-wrapper { position: relative; flex-shrink: 0; }
+  .page {
+    background: white; box-shadow: var(--shadow); position: relative;
+    transform-origin: top left; border-radius: 2px;
+  }
+  .page.drop-over { box-shadow: 0 0 0 3px var(--accent), var(--shadow); }
+
+  /* Image blocks on page */
+  .img-block {
+    position: absolute; overflow: hidden; cursor: move;
+    border: 1.5px solid transparent; border-radius: 2px;
+    transition: border-color 0.1s, box-shadow 0.1s;
+    touch-action: none;
+  }
+  .img-block:hover { border-color: rgba(74,144,217,0.3); }
+  .img-block.selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .img-block img {
+    position: absolute; max-width: none;
+    pointer-events: none; display: block;
+  }
+
+  /* Per-image crop mode */
+  .img-block.crop-editing {
+    border-color: var(--crop-accent);
+    box-shadow: 0 0 0 2px rgba(224,138,62,0.28);
+    cursor: grab;
+  }
+  .img-block.crop-editing:active { cursor: grabbing; }
+  .img-block.crop-editing .resize-handle { display: none; }
+  .crop-grid {
+    position: absolute; inset: 0; z-index: 3; pointer-events: none;
+    display: none;
+    background:
+      linear-gradient(to right, transparent 33.1%, rgba(255,255,255,.72) 33.2%, rgba(255,255,255,.72) 33.6%, transparent 33.7%, transparent 66.3%, rgba(255,255,255,.72) 66.4%, rgba(255,255,255,.72) 66.8%, transparent 66.9%),
+      linear-gradient(to bottom, transparent 33.1%, rgba(255,255,255,.72) 33.2%, rgba(255,255,255,.72) 33.6%, transparent 33.7%, transparent 66.3%, rgba(255,255,255,.72) 66.4%, rgba(255,255,255,.72) 66.8%, transparent 66.9%);
+  }
+  .img-block.crop-editing .crop-grid { display: block; }
+  .crop-mode-label {
+    position: absolute; left: 50%; bottom: 7px; transform: translateX(-50%);
+    z-index: 4; display: none; pointer-events: none;
+    padding: 3px 7px; border-radius: 10px;
+    background: rgba(20,20,20,.72); color: white;
+    font-size: 9px; white-space: nowrap;
+  }
+  .img-block.crop-editing .crop-mode-label { display: block; }
+
+  .crop-actions { display: flex; gap: 6px; margin-bottom: 8px; }
+  .crop-actions .btn { flex: 1; justify-content: center; padding-left: 8px; padding-right: 8px; }
+  .btn-crop-active { background: var(--crop-accent); color: white; }
+  .btn-crop-active:hover { background: #c8742e; }
+
+  /* Resize handles */
+  .resize-handle {
+    position: absolute; width: 14px; height: 14px;
+    background: var(--accent); border: 2px solid white;
+    border-radius: 3px; display: none; z-index: 5;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+    /* Invisible hit area expansion */
+    margin: -6px;
+    padding: 6px;
+    box-sizing: content-box;
+  }
+  .img-block.selected .resize-handle { display: block; }
+  .img-block.selected.crop-editing .resize-handle { display: none; }
+  /* Vertical handles stay available in compact mode: they promote one image
+     into an adaptive mosaic region and reflow the surrounding layout. */
+  .resize-handle.nw { top: -7px; left: -7px; cursor: nw-resize; }
+  .resize-handle.ne { top: -7px; right: -7px; cursor: ne-resize; }
+  .resize-handle.sw { bottom: -7px; left: -7px; cursor: sw-resize; }
+  .resize-handle.se { bottom: -7px; right: -7px; cursor: se-resize; }
+
+  /* Edge resize handles */
+  .resize-handle.n  { top: -7px; left: 50%; transform: translateX(-50%); cursor: n-resize; width: 28px; height: 10px; }
+  .resize-handle.s  { bottom: -7px; left: 50%; transform: translateX(-50%); cursor: s-resize; width: 28px; height: 10px; }
+  .resize-handle.w  { left: -7px; top: 50%; transform: translateY(-50%); cursor: w-resize; width: 10px; height: 28px; }
+  .resize-handle.e  { right: -7px; top: 50%; transform: translateY(-50%); cursor: e-resize; width: 10px; height: 28px; }
+
+  /* Size tooltip */
+  .size-tip {
+    position: absolute; bottom: -22px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.75); color: white; font-size: 10px; padding: 2px 6px;
+    border-radius: 3px; white-space: nowrap; pointer-events: none;
+    display: none; z-index: 10;
+  }
+  .img-block.selected .size-tip { display: block; }
+  .img-block.crop-editing .size-tip { display: none; }
+
+  /* Empty state */
+  .empty-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100%; color: var(--text-muted); text-align: center;
+  }
+  .empty-state .big-icon { font-size: 56px; margin-bottom: 12px; opacity: 0.25; }
+  .empty-state p { font-size: 14px; }
+  .empty-state .hint { font-size: 12px; margin-top: 4px; color: #999; }
+
+  /* Drop zone on empty */
+  .drop-zone-overlay {
+    display: none; position: absolute; inset: 0; z-index: 50;
+    background: rgba(74,144,217,0.08); border: 3px dashed var(--accent);
+    border-radius: 4px; pointer-events: none;
+  }
+  .main-viewport.drag-active .drop-zone-overlay { display: block; }
+
+  /* Alignment guides */
+  .guide-line {
+    position: absolute; background: rgba(74, 144, 217, 0.7);
+    z-index: 100; pointer-events: none; display: none;
+  }
+  .guide-line.horizontal { height: 1px; left: 0; right: 0; }
+  .guide-line.vertical { width: 1px; top: 0; bottom: 0; }
+
+  /* Status bar */
+  .status-bar {
+    position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.6); color: white; font-size: 11px;
+    padding: 4px 12px; border-radius: 12px; white-space: nowrap;
+    pointer-events: none; z-index: 20;
+  }
+
+  /* Snap indicator */
+  .snap-badge {
+    position: absolute; top: -24px; left: 50%; transform: translateX(-50%);
+    background: var(--accent); color: white; font-size: 9px; padding: 1px 6px;
+    border-radius: 3px; white-space: nowrap; pointer-events: none;
+    display: none; z-index: 10;
+  }
+  .snap-badge.visible { display: block; }
+
+  /* Compact fill mode indicator */
+  .page.compact-mode {
+    outline: 2px dashed rgba(74, 144, 217, 0.4);
+    outline-offset: -1px;
+  }
+
+  /* Marquee selection box */
+  .marquee {
+    position: absolute; border: 1.5px dashed var(--accent);
+    background: rgba(74, 144, 217, 0.08);
+    pointer-events: none; z-index: 200; display: none;
+  }
+
+  /* Multi-selected images */
+  .img-block.multi-selected {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header-title">
+    <h1>快速拼版</h1>
+    <span class="header-subtitle">上传 · 调整 · 保存</span>
+  </div>
+  <div class="header-actions">
+    <button class="btn btn-outline" id="btnUndo" disabled>↶ 撤销</button>
+    <button class="btn btn-accent-outline" id="btnRelayout" disabled>应用新布局</button>
+    <button class="btn btn-primary" id="btnExport" disabled>保存高清图片</button>
+  </div>
+</header>
+
+<div class="layout-status" id="layoutStatus"></div>
+
+<div class="app-layout">
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <h3>上传图片</h3>
+      <div class="upload-area" id="uploadArea">
+        <span class="icon">📁</span>
+        <span class="label">拖拽或点击上传</span>
+        <span class="sublabel">支持批量 · JPG PNG WEBP</span>
+      </div>
+      <input type="file" id="fileInput" multiple accept="image/*" hidden>
+    </div>
+
+    <div class="sidebar-section" id="thumbSection" style="display:none">
+      <h3>图片列表 <span class="count-badge" id="imgCount">0</span></h3>
+      <p class="hint">拖拽缩略图调整顺序</p>
+      <div class="thumb-list" id="thumbList"></div>
+    </div>
+
+    <div class="sidebar-section">
+      <h3>快速设置</h3>
+      <select id="pageSize">
+        <option value="a4">A4 纵向</option>
+        <option value="a4l">A4 横向</option>
+        <option value="a3">A3 纵向</option>
+        <option value="letter">Letter 纵向</option>
+      </select>
+      <div class="control-row" style="margin-top:10px">
+        <label>间距</label>
+        <input type="range" id="gapSize" min="0" max="20" value="4" step="1">
+        <span class="value" id="gapVal">4mm</span>
+      </div>
+      <div class="control-row">
+        <label>边距</label>
+        <input type="range" id="paddingSize" min="0" max="30" value="8" step="1">
+        <span class="value" id="padVal">8mm</span>
+      </div>
+      <button class="btn btn-outline" id="btnAutoTrim" disabled style="width:100%;justify-content:center;margin-top:2px">自动去白边</button>
+      <div class="quick-note">默认完整显示图片，并以 300 DPI 保存。调整尺寸后再点「应用新布局」。</div>
+    </div>
+
+    <div class="sidebar-section" id="cropSection" style="display:none">
+      <h3>单图裁切</h3>
+      <div class="crop-actions">
+        <button class="btn btn-accent-outline" id="btnCropMode">调整取景</button>
+        <button class="btn btn-outline" id="btnCropReset">重置</button>
+      </div>
+      <div class="control-row">
+        <label>图片缩放</label>
+        <input type="range" id="cropZoom" min="100" max="400" value="100" step="1">
+        <span class="value" id="cropZoomVal">100%</span>
+      </div>
+      <div class="control-row">
+        <label>此图片</label>
+        <select id="itemFitMode" style="width:auto; min-width:112px">
+          <option value="global">跟随全局</option>
+          <option value="cover">裁剪填满</option>
+          <option value="contain">完整显示</option>
+          <option value="fill">拉伸填满</option>
+        </select>
+      </div>
+      <p class="hint" id="cropHint" style="line-height:1.55">
+        双击图片或点击「调整取景」<br>拖动画面移动焦点 · 滑杆/滚轮缩放
+      </p>
+    </div>
+
+    <details class="advanced-settings">
+      <summary>高级设置</summary>
+      <div class="advanced-content">
+        <div class="sidebar-section" style="margin-bottom:10px">
+          <h3>布局控制</h3>
+          <select id="columnsSelect">
+            <option value="0">每行张数：自动</option>
+            <option value="1">每行 1 张</option>
+            <option value="2">每行 2 张</option>
+            <option value="3">每行 3 张</option>
+            <option value="4">每行 4 张</option>
+            <option value="5">每行 5 张</option>
+            <option value="6">每行 6 张</option>
+          </select>
+          <div class="control-row" style="margin-top:9px">
+            <label id="rowHeightLabel">行高</label>
+            <input type="range" id="rowHeight" min="15" max="120" value="45" step="1">
+            <span class="value" id="rowVal">45mm</span>
+          </div>
+          <div class="control-row">
+            <label>背景</label>
+            <input type="color" id="bgColor" value="#ffffff">
+          </div>
+          <div class="control-row">
+            <label>全局裁切</label>
+            <select id="fitMode" style="width:auto; min-width:108px">
+              <option value="cover">裁剪填满</option>
+              <option value="contain" selected>完整显示</option>
+              <option value="fill">拉伸填满</option>
+            </select>
+          </div>
+          <div class="control-row">
+            <label>DPI</label>
+            <input type="range" id="dpiSize" min="72" max="300" value="300" step="1">
+            <span class="value" id="dpiVal">300</span>
+          </div>
+        </div>
+        <div class="advanced-actions">
+          <button class="btn btn-outline" id="btnCompact" disabled>紧凑模式</button>
+          <button class="btn btn-outline" id="btnSnap" title="开启/关闭磁力吸附" disabled>🧲 吸附</button>
+          <button class="btn btn-outline" id="btnSpaceH" disabled>⬌ 等间距</button>
+          <button class="btn btn-outline" id="btnPrint" disabled>打印</button>
+          <button class="btn btn-outline" id="btnClear" disabled>清空全部</button>
+        </div>
+      </div>
+    </details>
+
+    <details class="advanced-settings">
+      <summary>使用提示</summary>
+      <div class="advanced-content hint" style="line-height:1.65">
+        · 拖边缘时只改变当前图片<br>
+        · 其他图片会暂时保持原位<br>
+        · 完成后点击「应用新布局」<br>
+        · 双击图片调整取景与缩放<br>
+        · 拖拽缩略图改变图片顺序<br>
+        · Delete 删除选中图片
+      </div>
+    </details>
+  </aside>
+
+  <main class="main-viewport" id="mainViewport">
+    <div class="page-wrapper" id="pageWrapper">
+      <div class="page" id="page"></div>
+      <div class="marquee" id="marquee"></div>
+    </div>
+    <div class="drop-zone-overlay"></div>
+    <div class="empty-state" id="emptyState">
+      <span class="big-icon">🖼️</span>
+      <p>把图片拖进来</p>
+      <span class="hint">会自动排成一张可保存的纸面</span>
+    </div>
+  </main>
+</div>
+
+<script>
+// ============================================================
+// Constants & State
+// ============================================================
+const PAGE_SIZES = {
+  a4:    { w: 210, h: 297 },
+  a4l:   { w: 297, h: 210 },
+  a3:    { w: 297, h: 420 },
+  letter:{ w: 215.9, h: 279.4 },
+};
+
+const state = {
+  images: [],          // { id, img, name, x, y, w, h, zIndex, crop?, fitMode? }
+  gap: 4,              // mm
+  padding: 8,          // mm
+  rowHeight: 45,       // mm
+  compactZoom: 100,    // stable zoom control for compact mode
+  bgColor: '#ffffff',
+  fitMode: 'contain',
+  pageSize: 'a4',
+  dpi: 300,
+  columns: 0,          // 0 = auto
+  selectedId: null,
+  selectedIds: [],    // multi-select array
+  zCounter: 1,
+  compactFill: false,
+  rowAssignments: [], // [{ ids, totalRatio }]
+  autoRowCount: null,
+  cropEditingId: null,
+  layoutVariant: 0,
+  layoutCandidateCount: 1,
+  mosaicAnchor: null,
+  layoutDirty: false,
+  pendingAnchor: null,
+};
+
+let nextId = 0;
+
+// ============================================================
+// Snap & Alignment State
+// ============================================================
+const SNAP_THRESHOLD = 3; // mm — how close to trigger snap
+const SIZE_SNAP_THRESHOLD = 2; // mm — how close in size to trigger size snap
+let snapEnabled = true;
+
+// Guide line elements (reused)
+let guideH1, guideH2, guideV1, guideV2;
+
+function initGuideLines() {
+  for (const id of ['gh1','gh2','gv1','gv2']) {
+    const el = document.createElement('div');
+    el.className = 'guide-line';
+    el.id = id;
+    if (id.startsWith('g')) el.style.display = 'none';
+    page.appendChild(el);
+  }
+  guideH1 = $('gh1'); guideH2 = $('gh2');
+  guideV1 = $('gv1'); guideV2 = $('gv2');
+}
+
+function showGuides(hPos, vPos) {
+  guideH1.style.display = hPos !== null ? 'block' : 'none';
+  if (hPos !== null) { guideH1.style.top = hPos + 'mm'; guideH1.className = 'guide-line horizontal'; }
+  guideH2.style.display = 'none';
+  guideV1.style.display = vPos !== null ? 'block' : 'none';
+  if (vPos !== null) { guideV1.style.left = vPos + 'mm'; guideV1.className = 'guide-line vertical'; }
+  guideV2.style.display = 'none';
+}
+
+function showDualGuides(hLines, vLines) {
+  // hLines: [{ pos, pos2 }] (pos = main guide, pos2 = paired guide)
+  guideH1.style.display = hLines.length >= 1 ? 'block' : 'none';
+  if (hLines.length >= 1) { guideH1.style.top = hLines[0].pos + 'mm'; }
+  guideH2.style.display = hLines.length >= 2 ? 'block' : 'none';
+  if (hLines.length >= 2) { guideH2.style.top = hLines[1].pos + 'mm'; }
+
+  guideV1.style.display = vLines.length >= 1 ? 'block' : 'none';
+  if (vLines.length >= 1) { guideV1.style.left = vLines[0].pos + 'mm'; }
+  guideV2.style.display = vLines.length >= 2 ? 'block' : 'none';
+  if (vLines.length >= 2) { guideV2.style.left = vLines[1].pos + 'mm'; }
+}
+
+function hideGuides() {
+  [guideH1, guideH2, guideV1, guideV2].forEach(g => { if (g) g.style.display = 'none'; });
+}
+
+function snapToGuides(img, others) {
+  if (!snapEnabled || !others.length) return { dx: 0, dy: 0 };
+
+  const threshold = SNAP_THRESHOLD;
+  let bestDx = 0, bestDy = 0;
+  let hLines = [], vLines = [];
+  let minHDist = threshold, minVDist = threshold;
+
+  const edges = getAlignmentEdges(img, others);
+
+  // Check vertical snap (x-axis)
+  for (const e of edges.vEdges) {
+    const diff = e.target - e.ref;
+    if (Math.abs(diff) < minVDist) {
+      minVDist = Math.abs(diff);
+      bestDx = diff;
+      vLines = [{ pos: e.ref }];
+      if (e.paired !== undefined) vLines.push({ pos: e.paired });
+    }
+  }
+
+  // Check horizontal snap (y-axis)
+  for (const e of edges.hEdges) {
+    const diff = e.target - e.ref;
+    if (Math.abs(diff) < minHDist) {
+      minHDist = Math.abs(diff);
+      bestDy = diff;
+      hLines = [{ pos: e.ref }];
+      if (e.paired !== undefined) hLines.push({ pos: e.paired });
+    }
+  }
+
+  showDualGuides(hLines, vLines);
+  return { dx: bestDx, dy: bestDy };
+}
+
+function getAlignmentEdges(img, others) {
+  const vEdges = []; // { target, ref, paired? }
+  const hEdges = [];
+
+  const imgCX = img.x + img.w / 2;
+  const imgCY = img.y + img.h / 2;
+
+  for (const o of others) {
+    if (o.id === img.id) continue;
+    const oCX = o.x + o.w / 2;
+    const oCY = o.y + o.h / 2;
+
+    // Left edge
+    vEdges.push({ target: img.x, ref: o.x });
+    vEdges.push({ target: img.x, ref: o.x + o.w, paired: o.x });
+    // Right edge
+    vEdges.push({ target: img.x + img.w, ref: o.x + o.w });
+    vEdges.push({ target: img.x + img.w, ref: o.x, paired: o.x + o.w });
+    // Center X
+    vEdges.push({ target: imgCX, ref: oCX });
+
+    // Top edge
+    hEdges.push({ target: img.y, ref: o.y });
+    hEdges.push({ target: img.y, ref: o.y + o.h, paired: o.y });
+    // Bottom edge
+    hEdges.push({ target: img.y + img.h, ref: o.y + o.h });
+    hEdges.push({ target: img.y + img.h, ref: o.y, paired: o.y + o.h });
+    // Center Y
+    hEdges.push({ target: imgCY, ref: oCY });
+  }
+
+  // Page edges
+  const ps = getPageSize();
+  vEdges.push({ target: img.x, ref: state.padding });
+  vEdges.push({ target: img.x + img.w, ref: ps.w - state.padding });
+  vEdges.push({ target: imgCX, ref: ps.w / 2 });
+  hEdges.push({ target: img.y, ref: state.padding });
+  hEdges.push({ target: img.y + img.h, ref: ps.h - state.padding });
+  hEdges.push({ target: imgCY, ref: ps.h / 2 });
+
+  return { vEdges, hEdges };
+}
+
+// Snap size to nearby images during resize
+function snapSize(img, others, handle, orig) {
+  if (!snapEnabled || !others.length) return { w: img.w, h: img.h, snapped: false };
+
+  const threshold = SIZE_SNAP_THRESHOLD;
+  let snapped = false;
+
+  for (const o of others) {
+    if (o.id === img.id) continue;
+
+    // Snap width
+    if (handle.includes('e') || handle.includes('w')) {
+      if (Math.abs(img.w - o.w) < threshold) {
+        const dw = o.w - img.w;
+        if (handle.includes('w')) { img.x += dw; }
+        img.w = o.w; snapped = true;
+        break;
+      }
+    }
+    // Snap height
+    if (handle.includes('n') || handle.includes('s')) {
+      if (Math.abs(img.h - o.h) < threshold) {
+        const dh = o.h - img.h;
+        if (handle.includes('n')) { img.y += dh; }
+        img.h = o.h; snapped = true;
+        break;
+      }
+    }
+  }
+
+  return { w: img.w, h: img.h, snapped };
+}
+
+// ============================================================
+// DOM
+// ============================================================
+const $ = id => document.getElementById(id);
+
+const uploadArea   = $('uploadArea');
+const fileInput    = $('fileInput');
+const thumbSection = $('thumbSection');
+const thumbList    = $('thumbList');
+const imgCount     = $('imgCount');
+const emptyState   = $('emptyState');
+const mainViewport = $('mainViewport');
+const pageWrapper  = $('pageWrapper');
+const page         = $('page');
+const marquee      = $('marquee');
+
+const btnCompact = $('btnCompact');
+const btnUndo    = $('btnUndo');
+const btnRelayout = $('btnRelayout');
+const btnSnap     = $('btnSnap');
+const btnSpaceH   = $('btnSpaceH');
+const btnClear    = $('btnClear');
+const btnPrint    = $('btnPrint');
+const btnExport   = $('btnExport');
+const btnAutoTrim = $('btnAutoTrim');
+
+const columnsSelect = $('columnsSelect');
+const gapSlider     = $('gapSize');
+const padSlider     = $('paddingSize');
+const rowSlider     = $('rowHeight');
+const bgColorPicker = $('bgColor');
+const fitModeSelect = $('fitMode');
+const pageSelect    = $('pageSize');
+const dpiSlider     = $('dpiSlider') || $('dpiSize');
+
+const gapVal = $('gapVal');
+const padVal = $('padVal');
+const rowVal = $('rowVal');
+const dpiVal = $('dpiVal');
+const cropSection   = $('cropSection');
+const btnCropMode   = $('btnCropMode');
+const btnCropReset  = $('btnCropReset');
+const cropZoom      = $('cropZoom');
+const cropZoomVal   = $('cropZoomVal');
+const itemFitMode   = $('itemFitMode');
+const layoutStatus  = $('layoutStatus');
+
+// ============================================================
+// Undo & lightweight feedback
+// ============================================================
+const undoStack = [];
+const HISTORY_LIMIT = 30;
+let statusTimer = null;
+
+function snapshotState() {
+  return {
+    images: state.images.map(item => ({
+      ...item,
+      crop: item.crop ? { ...item.crop } : undefined,
+      sourceBounds: item.sourceBounds ? { ...item.sourceBounds } : undefined,
+    })),
+    gap: state.gap,
+    padding: state.padding,
+    rowHeight: state.rowHeight,
+    compactZoom: state.compactZoom,
+    bgColor: state.bgColor,
+    fitMode: state.fitMode,
+    pageSize: state.pageSize,
+    dpi: state.dpi,
+    columns: state.columns,
+    selectedId: state.selectedId,
+    selectedIds: [...state.selectedIds],
+    zCounter: state.zCounter,
+    compactFill: state.compactFill,
+    rowAssignments: state.rowAssignments.map(row => ({ ...row, ids: [...row.ids] })),
+    autoRowCount: state.autoRowCount,
+    cropEditingId: state.cropEditingId,
+    layoutVariant: state.layoutVariant,
+    layoutCandidateCount: state.layoutCandidateCount,
+    mosaicAnchor: state.mosaicAnchor ? { ...state.mosaicAnchor } : null,
+    layoutDirty: state.layoutDirty,
+    pendingAnchor: state.pendingAnchor ? { ...state.pendingAnchor } : null,
+  };
+}
+
+function pushHistory() {
+  undoStack.push(snapshotState());
+  if (undoStack.length > HISTORY_LIMIT) undoStack.shift();
+  btnUndo.disabled = false;
+}
+
+function restoreSnapshot(snapshot) {
+  Object.assign(state, snapshot);
+  state.images = snapshot.images.map(item => ({
+    ...item,
+    crop: item.crop ? { ...item.crop } : undefined,
+    sourceBounds: item.sourceBounds ? { ...item.sourceBounds } : undefined,
+  }));
+  state.selectedIds = [...snapshot.selectedIds];
+  state.rowAssignments = snapshot.rowAssignments.map(row => ({ ...row, ids: [...row.ids] }));
+  state.mosaicAnchor = snapshot.mosaicAnchor ? { ...snapshot.mosaicAnchor } : null;
+  state.pendingAnchor = snapshot.pendingAnchor ? { ...snapshot.pendingAnchor } : null;
+
+  gapSlider.value = state.gap; gapVal.textContent = state.gap + 'mm';
+  padSlider.value = state.padding; padVal.textContent = state.padding + 'mm';
+  pageSelect.value = state.pageSize;
+  columnsSelect.value = state.columns;
+  bgColorPicker.value = state.bgColor;
+  fitModeSelect.value = state.fitMode;
+  dpiSlider.value = state.dpi; dpiVal.textContent = state.dpi;
+  refresh();
+}
+
+function showStatus(message) {
+  layoutStatus.textContent = message;
+  layoutStatus.classList.add('visible');
+  clearTimeout(statusTimer);
+  statusTimer = setTimeout(() => layoutStatus.classList.remove('visible'), 1300);
+}
+
+function updateLayoutAction() {
+  btnRelayout.textContent = '应用新布局';
+  btnRelayout.classList.toggle('btn-layout-dirty', state.layoutDirty);
+  btnRelayout.classList.toggle('btn-accent-outline', !state.layoutDirty);
+  btnExport.disabled = !state.images.length || state.layoutDirty;
+}
+
+function recordLayoutPreference(item, interaction) {
+  const frameRatio = item.w / Math.max(item.h, 1);
+  item._layoutWeight = Math.pow(clamp(frameRatio, 0.32, 3.6), 0.76);
+  const heightChange = Math.abs(item.h - interaction.origH) / Math.max(interaction.origH, 1);
+  const widthChange = Math.abs(item.w - interaction.origW) / Math.max(interaction.origW, 1);
+  const verticalIntent = interaction.handle === 'n' || interaction.handle === 's'
+    || (interaction.handle.length === 2 && heightChange > widthChange * 1.08);
+  const ps = getPageSize();
+
+  if (verticalIntent || state.pendingAnchor?.id === item.id) {
+    state.pendingAnchor = {
+      id: item.id,
+      width: item.w,
+      height: item.h,
+      side: interaction.origX + interaction.origW / 2 < ps.w / 2 ? 'left' : 'right',
+      align: interaction.handle.includes('n') ? 'bottom'
+        : interaction.handle.includes('s') ? 'top'
+        : (interaction.origY + interaction.origH / 2 < ps.h / 2 ? 'top' : 'bottom'),
+    };
+  }
+
+  state.layoutDirty = true;
+  // Keep the current geometry on screen, but detach it from the previously
+  // applied topology until the user explicitly asks for a new solve.
+  state.mosaicAnchor = null;
+  updateLayoutAction();
+  if (!interaction.dirtyMessageShown) {
+    interaction.dirtyMessageShown = true;
+    showStatus('尺寸已保留，其他图片保持原位');
+  }
+}
+
+btnUndo.addEventListener('click', () => {
+  const snapshot = undoStack.pop();
+  if (!snapshot) return;
+  restoreSnapshot(snapshot);
+  btnUndo.disabled = undoStack.length === 0;
+  showStatus('已撤销');
+});
+
+// ============================================================
+// Coordinate Helpers
+// ============================================================
+function getPageSize() { return PAGE_SIZES[state.pageSize]; }
+
+// Convert mm to display pixels for the page element
+function mmToDisplayPx(mm) {
+  const rect = page.getBoundingClientRect();
+  const ps = getPageSize();
+  return mm / ps.w * rect.width;
+}
+
+// Convert screen pointer to page mm coordinates
+function pointerToMm(e) {
+  const rect = page.getBoundingClientRect();
+  const ps = getPageSize();
+  return {
+    x: (e.clientX - rect.left) / rect.width * ps.w,
+    y: (e.clientY - rect.top) / rect.height * ps.h,
+  };
+}
+
+// ============================================================
+// Per-image crop model
+// ============================================================
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function ensureCrop(item) {
+  if (!item.crop) item.crop = { zoom: 1, focusX: 0.5, focusY: 0.5 };
+  const zoom = Number(item.crop.zoom);
+  const focusX = Number(item.crop.focusX);
+  const focusY = Number(item.crop.focusY);
+  item.crop.zoom = clamp(Number.isFinite(zoom) ? zoom : 1, 1, 4);
+  item.crop.focusX = clamp(Number.isFinite(focusX) ? focusX : 0.5, 0, 1);
+  item.crop.focusY = clamp(Number.isFinite(focusY) ? focusY : 0.5, 0, 1);
+  return item.crop;
+}
+
+function getItemFitMode(item) {
+  return item.fitMode && item.fitMode !== 'global'
+    ? item.fitMode
+    : state.fitMode;
+}
+
+function getSourceBounds(item) {
+  const fullW = Math.max(item.img.naturalWidth, 1);
+  const fullH = Math.max(item.img.naturalHeight, 1);
+  if (!item.sourceBounds) return { x: 0, y: 0, w: fullW, h: fullH };
+  const x = clamp(item.sourceBounds.x, 0, fullW - 1);
+  const y = clamp(item.sourceBounds.y, 0, fullH - 1);
+  const w = clamp(item.sourceBounds.w, 1, fullW - x);
+  const h = clamp(item.sourceBounds.h, 1, fullH - y);
+  return { x, y, w, h };
+}
+
+function detectWhitespaceBounds(item) {
+  const source = item.img;
+  const maxSide = 512;
+  const scale = Math.min(1, maxSide / Math.max(source.naturalWidth, source.naturalHeight));
+  const w = Math.max(1, Math.round(source.naturalWidth * scale));
+  const h = Math.max(1, Math.round(source.naturalHeight * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(source, 0, 0, w, h);
+  const pixels = ctx.getImageData(0, 0, w, h).data;
+
+  const sample = (cx, cy) => {
+    let r = 0, g = 0, b = 0, a = 0, count = 0;
+    for (let oy = -1; oy <= 1; oy++) for (let ox = -1; ox <= 1; ox++) {
+      const x = clamp(cx + ox, 0, w - 1);
+      const y = clamp(cy + oy, 0, h - 1);
+      const i = (y * w + x) * 4;
+      r += pixels[i]; g += pixels[i + 1]; b += pixels[i + 2]; a += pixels[i + 3]; count++;
+    }
+    return [r / count, g / count, b / count, a / count];
+  };
+  const corners = [sample(1,1), sample(w-2,1), sample(1,h-2), sample(w-2,h-2)];
+  const colorDistance = (a, b) => Math.max(...a.map((value, i) => Math.abs(value - b[i])));
+  if (corners.some(color => colorDistance(color, corners[0]) > 24)) return null;
+  const bg = corners.reduce((sum, color) => sum.map((value, i) => value + color[i]), [0,0,0,0]).map(value => value / 4);
+
+  let minX = w, minY = h, maxX = -1, maxY = -1;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 4;
+      const pixel = [pixels[i], pixels[i+1], pixels[i+2], pixels[i+3]];
+      const isContent = bg[3] < 32
+        ? pixel[3] > 45
+        : (Math.max(Math.abs(pixel[0]-bg[0]), Math.abs(pixel[1]-bg[1]), Math.abs(pixel[2]-bg[2])) > 22
+          || Math.abs(pixel[3]-bg[3]) > 28);
+      if (isContent) {
+        minX = Math.min(minX, x); minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+      }
+    }
+  }
+  if (maxX < minX || maxY < minY) return null;
+
+  const padding = Math.max(2, Math.round(Math.min(w, h) * 0.008));
+  minX = Math.max(0, minX - padding); minY = Math.max(0, minY - padding);
+  maxX = Math.min(w - 1, maxX + padding); maxY = Math.min(h - 1, maxY + padding);
+  const trimmedW = maxX - minX + 1;
+  const trimmedH = maxY - minY + 1;
+  const removed = 1 - (trimmedW * trimmedH) / (w * h);
+  if (removed < 0.035 || trimmedW * trimmedH < w * h * 0.06) return null;
+
+  return {
+    x: minX / scale,
+    y: minY / scale,
+    w: trimmedW / scale,
+    h: trimmedH / scale,
+  };
+}
+
+// Return the full source image's destination rectangle inside a clipped frame.
+// The same calculation drives both DOM preview and canvas export.
+function getImagePlacement(item, destW, destH) {
+  const crop = ensureCrop(item);
+  const mode = getItemFitMode(item);
+  const bounds = getSourceBounds(item);
+  const sourceW = bounds.w;
+  const sourceH = bounds.h;
+  let baseW, baseH;
+
+  if (mode === 'fill') {
+    baseW = destW;
+    baseH = destH;
+  } else {
+    const scaleX = destW / sourceW;
+    const scaleY = destH / sourceH;
+    const scale = mode === 'contain' ? Math.min(scaleX, scaleY) : Math.max(scaleX, scaleY);
+    baseW = sourceW * scale;
+    baseH = sourceH * scale;
+  }
+
+  const dw = baseW * crop.zoom;
+  const dh = baseH * crop.zoom;
+  let dx = destW / 2 - crop.focusX * dw;
+  let dy = destH / 2 - crop.focusY * dh;
+
+  // If an axis covers the frame, never reveal an empty edge. If it does not
+  // cover (Contain), keep that axis centered instead of allowing odd drift.
+  dx = dw >= destW ? clamp(dx, destW - dw, 0) : (destW - dw) / 2;
+  dy = dh >= destH ? clamp(dy, destH - dh, 0) : (destH - dh) / 2;
+
+  return { dx, dy, dw, dh, mode, bounds };
+}
+
+function applyImagePlacement(item, imgEl) {
+  if (!imgEl || item.w <= 0 || item.h <= 0) return;
+  const placement = getImagePlacement(item, item.w, item.h);
+  const fullW = Math.max(item.img.naturalWidth, 1);
+  const fullH = Math.max(item.img.naturalHeight, 1);
+  const fullDw = placement.dw * fullW / placement.bounds.w;
+  const fullDh = placement.dh * fullH / placement.bounds.h;
+  const fullDx = placement.dx - placement.bounds.x / placement.bounds.w * placement.dw;
+  const fullDy = placement.dy - placement.bounds.y / placement.bounds.h * placement.dh;
+  imgEl.style.left = (fullDx / item.w * 100) + '%';
+  imgEl.style.top = (fullDy / item.h * 100) + '%';
+  imgEl.style.width = (fullDw / item.w * 100) + '%';
+  imgEl.style.height = (fullDh / item.h * 100) + '%';
+  imgEl.style.objectFit = 'fill';
+}
+
+function getSelectedImage() {
+  return state.images.find(item => item.id === state.selectedId) || null;
+}
+
+function updateCropControls() {
+  const item = getSelectedImage();
+  if (!item) state.cropEditingId = null;
+  else if (state.cropEditingId !== null && state.cropEditingId !== item.id) state.cropEditingId = null;
+  page.querySelectorAll('.img-block').forEach(block => {
+    block.classList.toggle('crop-editing', state.cropEditingId !== null && +block.dataset.id === state.cropEditingId);
+  });
+  cropSection.style.display = item ? 'block' : 'none';
+  if (!item) return;
+
+  const crop = ensureCrop(item);
+  cropZoom.value = Math.round(crop.zoom * 100);
+  cropZoomVal.textContent = Math.round(crop.zoom * 100) + '%';
+  itemFitMode.value = item.fitMode || 'global';
+
+  const active = state.cropEditingId === item.id;
+  btnCropMode.textContent = active ? '完成裁切' : '调整取景';
+  btnCropMode.classList.toggle('btn-crop-active', active);
+  btnCropMode.classList.toggle('btn-accent-outline', !active);
+}
+
+function setCropEditing(id) {
+  state.cropEditingId = state.cropEditingId === id ? null : id;
+  updateCropControls();
+}
+
+// ============================================================
+// Upload
+// ============================================================
+uploadArea.addEventListener('click', () => fileInput.click());
+uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop', e => {
+  e.preventDefault(); uploadArea.classList.remove('dragover');
+  handleFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', () => { handleFiles(fileInput.files); fileInput.value = ''; });
+
+// Also accept drops on main viewport
+mainViewport.addEventListener('dragover', e => { e.preventDefault(); mainViewport.classList.add('drag-active'); });
+mainViewport.addEventListener('dragleave', e => { if (!mainViewport.contains(e.relatedTarget)) mainViewport.classList.remove('drag-active'); });
+mainViewport.addEventListener('drop', e => {
+  e.preventDefault(); mainViewport.classList.remove('drag-active');
+  if (e.dataTransfer.files.length) handleFiles(e.dataTransfer.files);
+});
+
+let uploadQueue = Promise.resolve();
+
+function handleFiles(fileList) {
+  const files = Array.from(fileList).filter(f => f.type.startsWith('image/'));
+  if (!files.length) return;
+
+  // Serialize separate upload actions as well as preserving order inside each
+  // batch. A second drop can no longer overtake the first one while it loads.
+  uploadQueue = uploadQueue.then(() => loadImageBatch(files));
+  return uploadQueue;
+}
+
+async function loadImageBatch(files) {
+
+  // Resolve as a batch, then append in the user's original selection order.
+  // Previously fast-loading small files could jump ahead of large files,
+  // making the exact same upload produce a different collage.
+  const loadedImages = await Promise.all(files.map(file => new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const img = new Image();
+      img.onload = () => resolve({ file, img });
+      img.onerror = () => resolve(null);
+      img.src = ev.target.result;
+    };
+    reader.onerror = () => resolve(null);
+    reader.readAsDataURL(file);
+  })));
+
+  if (loadedImages.some(Boolean)) pushHistory();
+  state.layoutVariant = 0;
+  state.mosaicAnchor = null;
+  state.layoutDirty = false;
+  state.pendingAnchor = null;
+  loadedImages.filter(Boolean).forEach(({ file, img }) => {
+    state.images.push({ id: nextId++, img, name: file.name, x: 0, y: 0, w: 0, h: 0, zIndex: state.zCounter++ });
+  });
+  if (state.images.length) compactFill({ rebuild: true });
+}
+
+// ============================================================
+// Auto Layout (smart multi-row)
+// ============================================================
+function autoLayout({ rebuild = true } = {}) {
+  if (!state.images.length) return;
+  const ps = getPageSize();
+  const pad = state.padding;
+  const gap = state.gap;
+  const rowH = state.rowHeight;
+  const innerW = ps.w - pad * 2;
+
+  const items = state.images.map(m => ({
+    id: m.id,
+    ratio: m.img.naturalWidth / m.img.naturalHeight,
+  }));
+  const n = items.length;
+
+  let numRows;
+  if (state.columns > 0) {
+    numRows = Math.ceil(n / state.columns);
+    state.autoRowCount = numRows;
+  } else if (!rebuild && state.autoRowCount) {
+    numRows = Math.min(n, state.autoRowCount);
+  } else {
+    numRows = findOptimalRows(items, innerW, rowH, gap);
+    state.autoRowCount = numRows;
+  }
+
+  const rows = distributeToRows(items, numRows);
+  let y = pad;
+
+  for (const row of rows) {
+    const totalRatio = row.reduce((s, it) => s + it.ratio, 0);
+    const rowGap = (row.length - 1) * gap;
+    const availableW = innerW - rowGap;
+    // Scale down row height if total width would exceed
+    const actualRowH = Math.min(rowH, availableW / totalRatio);
+
+    let x = pad;
+    for (const item of row) {
+      const w = item.ratio * actualRowH;
+      const imgData = state.images.find(m => m.id === item.id);
+      if (imgData) { imgData.x = x; imgData.y = y; imgData.w = w; imgData.h = actualRowH; }
+      x += w + gap;
+    }
+    y += actualRowH + gap;
+  }
+}
+
+function findOptimalRows(items, innerW, rowH, gap) {
+  const n = items.length;
+  if (n <= 1) return 1;
+
+  const MIN_IMG_W = 20; // mm - minimum acceptable image width
+  let bestRows = 1;
+  let bestScore = Infinity;
+
+  for (let r = 1; r <= n; r++) {
+    const rows = distributeToRows(items, r);
+    let score = 0;
+    let anyTooSmall = false;
+
+    for (const row of rows) {
+      const totalRatio = row.reduce((s, it) => s + it.ratio, 0);
+      const rowGap = (row.length - 1) * gap;
+      const neededW = totalRatio * rowH + rowGap;
+
+      if (neededW > innerW) {
+        score += (neededW - innerW) * 5;
+      } else {
+        score += (innerW - neededW) * 0.5;
+      }
+
+      for (const item of row) {
+        const availW = innerW - rowGap;
+        const actualH = Math.min(rowH, availW / totalRatio);
+        const itemW = item.ratio * actualH;
+        if (itemW < MIN_IMG_W) anyTooSmall = true;
+      }
+    }
+
+    if (anyTooSmall) score += 500;
+    if (score < bestScore) { bestScore = score; bestRows = r; }
+  }
+  return bestRows;
+}
+
+function distributeToRows(items, numRows) {
+  const rows = [];
+  for (let r = 0; r < numRows; r++) {
+    const start = Math.floor(r * items.length / numRows);
+    const end = Math.floor((r + 1) * items.length / numRows);
+    rows.push(items.slice(start, end));
+  }
+  return rows;
+}
+
+// ============================================================
+// Compact Fill Mode — deterministic, balanced, stable while adjusting
+// ============================================================
+const COMPACT_MIN_TILE_W = 22;
+const COMPACT_MAX_ITEMS_PER_ROW = 6;
+
+function nativeRatio(item) {
+  const bounds = getSourceBounds(item);
+  return bounds.w / Math.max(bounds.h, 1);
+}
+
+function compactWeight(item) {
+  if (Number.isFinite(item._layoutWeight) && item._layoutWeight > 0) return item._layoutWeight;
+  // Compress extreme panoramas and portraits without flattening their character.
+  return Math.pow(Math.min(3.2, Math.max(0.42, nativeRatio(item))), 0.76);
+}
+
+function projectWidths(weights, total, minWidth, maxWidth) {
+  const n = weights.length;
+  if (!n) return [];
+  const minW = Math.min(minWidth, total / n);
+  const maxW = Math.max(total / n, Math.min(maxWidth, total - minW * (n - 1)));
+  const result = new Array(n).fill(null);
+  const open = new Set(weights.map((_, i) => i));
+  let remaining = total;
+
+  while (open.size) {
+    const sum = [...open].reduce((s, i) => s + Math.max(weights[i], 0.0001), 0);
+    let fixedAny = false;
+    for (const i of [...open]) {
+      const proposal = remaining * Math.max(weights[i], 0.0001) / sum;
+      if (proposal < minW - 0.001) {
+        result[i] = minW; remaining -= minW; open.delete(i); fixedAny = true;
+      } else if (proposal > maxW + 0.001) {
+        result[i] = maxW; remaining -= maxW; open.delete(i); fixedAny = true;
+      }
+    }
+    if (!fixedAny) {
+      const openSum = [...open].reduce((s, i) => s + Math.max(weights[i], 0.0001), 0);
+      for (const i of open) result[i] = remaining * Math.max(weights[i], 0.0001) / openSum;
+      break;
+    }
+  }
+
+  // Absorb floating point residue in the last tile so every row closes cleanly.
+  const residue = total - result.reduce((s, w) => s + (w || 0), 0);
+  result[result.length - 1] = Math.max(0, (result[result.length - 1] || 0) + residue);
+  return result;
+}
+
+function balancedRowWidths(rowItems, availableW) {
+  const n = rowItems.length;
+  const avg = availableW / Math.max(n, 1);
+  const minW = Math.min(COMPACT_MIN_TILE_W, avg * 0.68);
+  const maxShare = n === 1 ? 1 : Math.min(0.68, 1.9 / n);
+  const maxW = Math.max(avg, availableW * maxShare);
+  return projectWidths(rowItems.map(compactWeight), availableW, minW, maxW);
+}
+
+function partitionForRowCount(items, rowCount, innerW, innerH, gap) {
+  const n = items.length;
+  const dp = Array.from({ length: rowCount + 1 }, () => Array(n + 1).fill(null));
+  dp[0][0] = { cost: 0, rows: [] };
+  const targetH = Math.sqrt((innerW * innerH) / Math.max(n, 1));
+
+  for (let r = 1; r <= rowCount; r++) {
+    for (let end = r; end <= n; end++) {
+      const minStart = Math.max(r - 1, end - COMPACT_MAX_ITEMS_PER_ROW);
+      for (let start = minStart; start < end; start++) {
+        const prev = dp[r - 1][start];
+        if (!prev) continue;
+        const row = items.slice(start, end);
+        const availableW = innerW - (row.length - 1) * gap;
+        if (availableW <= 0) continue;
+        const weights = row.map(compactWeight);
+        const naturalH = availableW / Math.max(weights.reduce((s, v) => s + v, 0), 0.01);
+        const widths = balancedRowWidths(row, availableW);
+        const minWidth = Math.min(...widths);
+        let rowCost = Math.pow((naturalH - targetH) / Math.max(targetH, 1), 2) * 18;
+        if (minWidth < 16) rowCost += Math.pow(16 - minWidth, 2) * 4;
+        if (row.length === 1 && n > 2) rowCost += 14;
+        const cost = prev.cost + rowCost;
+        if (!dp[r][end] || cost < dp[r][end].cost) {
+          dp[r][end] = { cost, rows: [...prev.rows, row] };
+        }
+      }
+    }
+  }
+  return dp[rowCount][n];
+}
+
+function scoreCompactRows(rows, innerW, innerH, gap, baseCost = 0) {
+  const naturalHs = [];
+  const widthsByRow = [];
+  for (const row of rows) {
+    const availableW = innerW - (row.length - 1) * gap;
+    const weightSum = row.reduce((s, item) => s + compactWeight(item), 0);
+    naturalHs.push(availableW / Math.max(weightSum, 0.01));
+    widthsByRow.push(balancedRowWidths(row, availableW));
+  }
+  const heightBudget = innerH - (rows.length - 1) * gap;
+  if (heightBudget <= 0) return Infinity;
+  const scale = heightBudget / Math.max(naturalHs.reduce((s, h) => s + h, 0), 0.01);
+  const scaledHs = naturalHs.map(h => h * scale);
+  const avgH = heightBudget / rows.length;
+  let score = baseCost;
+  let minArea = Infinity;
+  let maxArea = 0;
+
+  rows.forEach((row, ri) => {
+    score += Math.pow((scaledHs[ri] - avgH) / Math.max(avgH, 1), 2) * 70;
+    row.forEach((item, ii) => {
+      const w = widthsByRow[ri][ii];
+      const h = scaledHs[ri];
+      const frameRatio = w / Math.max(h, 0.01);
+      const sourceRatio = nativeRatio(item);
+      const cropLoss = 1 - Math.min(frameRatio / sourceRatio, sourceRatio / frameRatio);
+      score += cropLoss * cropLoss * 28;
+      if (w < 18) score += Math.pow(18 - w, 2) * 3;
+      if (h < 18) score += Math.pow(18 - h, 2) * 3;
+      const area = w * h;
+      minArea = Math.min(minArea, area);
+      maxArea = Math.max(maxArea, area);
+    });
+    if (row.length === 1 && rows.length > 1) score += 12;
+  });
+
+  if (minArea > 0 && Number.isFinite(minArea)) score += Math.pow(Math.log(maxArea / minArea), 2) * 8;
+  return score;
+}
+
+function getCompactCandidates(items, innerW, innerH, gap) {
+  const candidates = [];
+  const minRows = Math.max(1, Math.ceil(items.length / COMPACT_MAX_ITEMS_PER_ROW));
+  for (let rowCount = minRows; rowCount <= items.length; rowCount++) {
+    const candidate = partitionForRowCount(items, rowCount, innerW, innerH, gap);
+    if (!candidate) continue;
+    const score = scoreCompactRows(candidate.rows, innerW, innerH, gap, candidate.cost);
+    candidates.push({ rows: candidate.rows, score });
+  }
+  return candidates.sort((a, b) => a.score - b.score);
+}
+
+function chooseCompactRows(items, innerW, innerH, gap, variant = 0) {
+  if (!items.length) return { rows: [], candidateCount: 0, selectedIndex: 0 };
+  const candidates = getCompactCandidates(items, innerW, innerH, gap);
+  if (!candidates.length) {
+    return { rows: distributeToRows(items, Math.ceil(items.length / 2)), candidateCount: 1, selectedIndex: 0 };
+  }
+  const candidateCount = Math.min(3, candidates.length);
+  const selectedIndex = ((variant % candidateCount) + candidateCount) % candidateCount;
+  return { rows: candidates[selectedIndex].rows, candidateCount, selectedIndex };
+}
+
+function buildCompactRows() {
+  const ps = getPageSize();
+  const innerW = ps.w - state.padding * 2;
+  const innerH = ps.h - state.padding * 2;
+  const items = state.images.slice();
+
+  if (state.columns > 0) {
+    const rows = [];
+    for (let i = 0; i < items.length; i += state.columns) rows.push(items.slice(i, i + state.columns));
+    state.rowAssignments = rows.map(row => ({ ids: row.map(item => item.id) }));
+    state.layoutCandidateCount = 1;
+    return;
+  }
+
+  const choice = chooseCompactRows(items, innerW, innerH, state.gap, state.layoutVariant);
+  state.layoutCandidateCount = choice.candidateCount;
+  state.layoutVariant = choice.selectedIndex;
+  state.rowAssignments = choice.rows.map(row => ({ ids: row.map(item => item.id) }));
+}
+
+function layoutRowsInRect(items, rect, regionName) {
+  if (!items.length || rect.w <= 0 || rect.h <= 0) return;
+  const choice = chooseCompactRows(items, rect.w, rect.h, state.gap, 0);
+  const rows = choice.rows;
+  const rowWidths = [];
+  const naturalHs = [];
+
+  rows.forEach(row => {
+    const availableW = Math.max(1, rect.w - (row.length - 1) * state.gap);
+    rowWidths.push(balancedRowWidths(row, availableW));
+    naturalHs.push(availableW / Math.max(row.reduce((sum, item) => sum + compactWeight(item), 0), 0.01));
+  });
+
+  const gapsH = (rows.length - 1) * state.gap;
+  const heightBudget = Math.max(1, rect.h - gapsH);
+  const scale = heightBudget / Math.max(naturalHs.reduce((sum, h) => sum + h, 0), 0.01);
+  const rowHs = naturalHs.map(h => h * scale);
+  let y = rect.y;
+
+  rows.forEach((row, rowIndex) => {
+    let x = rect.x;
+    row.forEach((item, itemIndex) => {
+      item.x = x;
+      item.y = y;
+      item.w = rowWidths[rowIndex][itemIndex];
+      item.h = rowHs[rowIndex];
+      item._row = null;
+      item._mosaicRegion = regionName;
+      x += item.w + state.gap;
+    });
+    y += rowHs[rowIndex] + state.gap;
+  });
+}
+
+function applyMosaicLayout() {
+  const anchorState = state.mosaicAnchor;
+  if (!anchorState) return false;
+  const anchor = state.images.find(item => item.id === anchorState.id);
+  if (!anchor) { state.mosaicAnchor = null; return false; }
+
+  const ps = getPageSize();
+  const pad = state.padding;
+  const gap = state.gap;
+  const innerW = ps.w - pad * 2;
+  const innerH = ps.h - pad * 2;
+  const minMainW = Math.min(52, innerW * 0.42);
+  const anchorW = clamp(anchorState.width, Math.min(28, innerW * 0.28), Math.max(28, innerW - gap - minMainW));
+  const anchorH = clamp(anchorState.height, Math.min(32, innerH), innerH);
+  const side = anchorState.side === 'left' ? 'left' : 'right';
+  const align = anchorState.align === 'top' ? 'top' : 'bottom';
+  const sideX = side === 'left' ? pad : pad + innerW - anchorW;
+  const mainX = side === 'left' ? sideX + anchorW + gap : pad;
+  const mainW = Math.max(1, innerW - anchorW - gap);
+  const anchorY = align === 'top' ? pad : pad + innerH - anchorH;
+  const leftoverH = Math.max(0, innerH - anchorH - gap);
+  const leftoverY = align === 'top' ? anchorY + anchorH + gap : pad;
+
+  anchorState.width = anchorW;
+  anchorState.height = anchorH;
+  anchor.x = sideX;
+  anchor.y = anchorY;
+  anchor.w = anchorW;
+  anchor.h = anchorH;
+  anchor._row = null;
+  anchor._mosaicRegion = 'anchor';
+
+  const remaining = state.images.filter(item => item.id !== anchor.id);
+  let sideItems = [];
+  let mainItems = remaining.slice();
+
+  if (leftoverH >= 26 && remaining.length >= 2) {
+    const sideArea = anchorW * leftoverH;
+    const mainArea = mainW * innerH;
+    const desired = clamp(Math.round(remaining.length * sideArea / Math.max(sideArea + mainArea, 1)), 1, remaining.length - 1);
+    const anchorIndex = state.images.findIndex(item => item.id === anchor.id);
+    const nearest = remaining
+      .map(item => ({ item, distance: Math.abs(state.images.findIndex(candidate => candidate.id === item.id) - anchorIndex) }))
+      .sort((a, b) => a.distance - b.distance || a.item.id - b.item.id)
+      .slice(0, desired)
+      .map(entry => entry.item.id);
+    const sideSet = new Set(nearest);
+    sideItems = remaining.filter(item => sideSet.has(item.id));
+    mainItems = remaining.filter(item => !sideSet.has(item.id));
+  }
+
+  layoutRowsInRect(mainItems, { x: mainX, y: pad, w: mainW, h: innerH }, 'main');
+  layoutRowsInRect(sideItems, { x: sideX, y: leftoverY, w: anchorW, h: leftoverH }, 'side');
+  state.rowAssignments = [];
+  return true;
+}
+
+function resizeMosaicAnchor(changedImg, handle, dx, dy, interaction) {
+  const corner = handle.length === 2;
+  const verticalIntent = handle === 'n' || handle === 's'
+    || (corner && Math.abs(dy) > Math.abs(dx) * 0.72);
+  const currentAnchorIntent = state.mosaicAnchor
+    && (handle === 'e' || handle === 'w' || corner);
+  if (!verticalIntent && !currentAnchorIntent) return false;
+
+  const ps = getPageSize();
+  const base = interaction.origMosaicAnchor && interaction.origMosaicAnchor.id === changedImg.id
+    ? { ...interaction.origMosaicAnchor }
+    : {
+        id: changedImg.id,
+        width: interaction.origW,
+        height: interaction.origH,
+        side: interaction.origX + interaction.origW / 2 < ps.w / 2 ? 'left' : 'right',
+        align: interaction.origY + interaction.origH / 2 < ps.h / 2 ? 'top' : 'bottom',
+      };
+
+  if (verticalIntent) {
+    if (handle.includes('n')) {
+      base.height = interaction.origH - dy;
+      base.align = 'bottom';
+    } else {
+      base.height = interaction.origH + dy;
+      base.align = 'top';
+    }
+  }
+  if (!verticalIntent || (corner && Math.abs(dx) >= Math.abs(dy) * 0.72)) {
+    if (handle.includes('w')) {
+      base.width = interaction.origW - dx;
+    } else if (handle.includes('e')) {
+      base.width = interaction.origW + dx;
+    }
+  }
+
+  state.mosaicAnchor = base;
+  applyMosaicLayout();
+  state.images.forEach(updateImageBlock);
+  updateRowHeightLabel();
+  if (!interaction.mosaicStarted) {
+    interaction.mosaicStarted = true;
+    showStatus('周围图片正在重新适应');
+  }
+  return true;
+}
+
+function applyCompactLayout() {
+  if (state.mosaicAnchor && applyMosaicLayout()) return;
+  if (!state.rowAssignments.length) return;
+  const ps = getPageSize();
+  const pad = state.padding;
+  const gap = state.gap;
+  const innerW = ps.w - pad * 2;
+  const innerH = ps.h - pad * 2;
+  const rows = state.rowAssignments.map(row => row.ids
+    .map(id => state.images.find(item => item.id === id))
+    .filter(Boolean)).filter(row => row.length);
+  if (!rows.length) return;
+
+  const rowWidths = [];
+  const naturalHs = [];
+  rows.forEach(row => {
+    const availableW = innerW - (row.length - 1) * gap;
+    rowWidths.push(balancedRowWidths(row, availableW));
+    naturalHs.push(availableW / Math.max(row.reduce((s, item) => s + compactWeight(item), 0), 0.01));
+  });
+
+  const gapsH = (rows.length - 1) * gap;
+  const baseHeightBudget = Math.max(1, innerH - gapsH);
+  const baseScale = baseHeightBudget / Math.max(naturalHs.reduce((s, h) => s + h, 0), 0.01);
+  const zoom = state.compactZoom / 100;
+  const rowHs = naturalHs.map(h => h * baseScale * zoom);
+  const contentH = rowHs.reduce((s, h) => s + h, 0) + gapsH;
+  let y = pad + (innerH - contentH) / 2;
+
+  rows.forEach((row, rowIndex) => {
+    let x = pad;
+    row.forEach((item, itemIndex) => {
+      item.x = x;
+      item.y = y;
+      item.w = rowWidths[rowIndex][itemIndex];
+      item.h = rowHs[rowIndex];
+      item._row = rowIndex;
+      x += item.w + gap;
+    });
+    y += rowHs[rowIndex] + gap;
+  });
+}
+
+function compactFill({ rebuild = true } = {}) {
+  if (!state.images.length) return;
+  if (rebuild || !state.rowAssignments.length) buildCompactRows();
+  state.compactFill = true;
+  applyCompactLayout();
+  refresh();
+}
+
+function captureCompactRow(img) {
+  if (!state.compactFill || img._row === undefined) return null;
+  const row = state.rowAssignments[img._row];
+  if (!row) return null;
+  const items = row.ids.map(id => state.images.find(item => item.id === id)).filter(Boolean);
+  return {
+    rowIndex: img._row,
+    ids: items.map(item => item.id),
+    widths: items.map(item => item.w),
+    weightSum: items.reduce((sum, item) => sum + compactWeight(item), 0),
+    availableW: items.reduce((s, item) => s + item.w, 0),
+    x: items[0]?.x || state.padding,
+    y: img.y,
+    h: img.h,
+  };
+}
+
+function resizeCompactRow(changedImg, handle, dx, dy, interaction) {
+  const snap = interaction.compactRow;
+  if (!snap || snap.ids.length < 2) return false;
+  const changedIndex = snap.ids.indexOf(changedImg.id);
+  if (changedIndex < 0) return false;
+
+  let delta = 0;
+  if (handle.includes('e')) delta = dx;
+  else if (handle.includes('w')) delta = -dx;
+  else delta = dy * (interaction.origW / Math.max(interaction.origH, 1));
+  if ((handle.includes('n') || handle.includes('s')) && Math.abs(dy) > Math.abs(dx)) {
+    const verticalDelta = (handle.includes('n') ? -dy : dy) * (interaction.origW / Math.max(interaction.origH, 1));
+    delta = verticalDelta;
+  }
+
+  const minW = Math.min(COMPACT_MIN_TILE_W, snap.availableW / snap.ids.length * 0.68);
+  const maxChanged = snap.availableW - minW * (snap.ids.length - 1);
+  const targetW = Math.max(minW, Math.min(maxChanged, snap.widths[changedIndex] + delta));
+  const otherIndices = snap.ids.map((_, i) => i).filter(i => i !== changedIndex);
+  const otherTotal = snap.availableW - targetW;
+  const otherWidths = projectWidths(otherIndices.map(i => snap.widths[i]), otherTotal, minW, otherTotal);
+  const widths = snap.widths.slice();
+  widths[changedIndex] = targetW;
+  otherIndices.forEach((index, i) => { widths[index] = otherWidths[i]; });
+
+  let x = snap.x;
+  snap.ids.forEach((id, i) => {
+    const item = state.images.find(candidate => candidate.id === id);
+    if (!item) return;
+    item.x = x;
+    item.y = snap.y;
+    item.w = widths[i];
+    item.h = snap.h;
+    item._layoutWeight = widths[i] / Math.max(snap.availableW, 1) * snap.weightSum;
+    updateImageBlock(item);
+    x += widths[i] + state.gap;
+  });
+  return true;
+}
+
+function updateCompactButton() {
+  if (state.compactFill) {
+    btnCompact.textContent = '退出紧凑';
+    btnCompact.classList.remove('btn-primary');
+    btnCompact.classList.add('btn-accent-outline');
+  } else {
+    btnCompact.textContent = '紧凑填满';
+    btnCompact.classList.remove('btn-accent-outline');
+    btnCompact.classList.add('btn-primary');
+  }
+  updateRowHeightLabel();
+}
+
+function updateRowHeightLabel() {
+  const label = $('rowHeightLabel');
+  if (!label) return;
+  if (state.compactFill) {
+    if (state.mosaicAnchor) {
+      label.textContent = '整体缩放';
+      rowSlider.disabled = true;
+      rowVal.textContent = '自动';
+      return;
+    }
+    rowSlider.disabled = false;
+    label.textContent = '缩放';
+    if (rowSlider.dataset.mode !== 'compact') {
+      rowSlider.dataset.mode = 'compact';
+      rowSlider.min = '70'; rowSlider.max = '130'; rowSlider.step = '1';
+      rowSlider.value = state.compactZoom;
+    }
+    rowVal.textContent = Math.round(state.compactZoom) + '%';
+  } else {
+    rowSlider.disabled = false;
+    label.textContent = '行高';
+    if (rowSlider.dataset.mode !== 'rows') {
+      rowSlider.dataset.mode = 'rows';
+      rowSlider.min = '15'; rowSlider.max = '120'; rowSlider.step = '1';
+      rowSlider.value = state.rowHeight;
+    }
+    rowVal.textContent = state.rowHeight + 'mm';
+  }
+}
+
+// ============================================================
+// Thumbnail List (sidebar)
+// ============================================================
+let dragSrcIdx = null;
+
+function renderThumbs() {
+  thumbList.innerHTML = '';
+  state.images.forEach((item, idx) => {
+    const div = document.createElement('div');
+    div.className = 'thumb-item' + (state.selectedId === item.id ? ' selected' : '');
+    div.draggable = true;
+    div.title = item.name;
+
+    const img = document.createElement('img');
+    img.src = item.img.src;
+    div.appendChild(img);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'remove-btn';
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      pushHistory();
+      state.images.splice(idx, 1);
+      if (state.mosaicAnchor?.id === item.id) state.mosaicAnchor = null;
+      state.layoutVariant = 0;
+      state.layoutDirty = false; state.pendingAnchor = null;
+      if (state.selectedId === item.id) state.selectedId = null;
+      state.selectedIds = state.selectedIds.filter(id => id !== item.id);
+      if (state.images.length && state.compactFill) { compactFill({ rebuild: true }); } else { autoLayout({ rebuild: true }); refresh(); }
+    });
+    div.appendChild(removeBtn);
+
+    // Click thumb to select on canvas
+    div.addEventListener('click', e => {
+      e.stopPropagation();
+      selectImage(item.id);
+    });
+
+    // Drag reorder
+    div.addEventListener('dragstart', e => { dragSrcIdx = idx; div.classList.add('dragging'); e.dataTransfer.effectAllowed = 'move'; });
+    div.addEventListener('dragend', () => { div.classList.remove('dragging'); dragSrcIdx = null; thumbList.querySelectorAll('.thumb-item').forEach(el => el.classList.remove('drag-over')); });
+    div.addEventListener('dragover', e => { e.preventDefault(); if (dragSrcIdx !== null && dragSrcIdx !== idx) div.classList.add('drag-over'); });
+    div.addEventListener('dragleave', () => div.classList.remove('drag-over'));
+    div.addEventListener('drop', e => {
+      e.preventDefault(); div.classList.remove('drag-over');
+      if (dragSrcIdx !== null && dragSrcIdx !== idx) {
+        pushHistory();
+        const [moved] = state.images.splice(dragSrcIdx, 1);
+        state.images.splice(idx, 0, moved);
+        state.mosaicAnchor = null;
+        state.layoutVariant = 0;
+        state.layoutDirty = false; state.pendingAnchor = null;
+        if (state.compactFill) compactFill({ rebuild: true });
+        else { autoLayout({ rebuild: true }); refresh(); }
+      }
+    });
+
+    thumbList.appendChild(div);
+  });
+  imgCount.textContent = state.images.length;
+}
+
+// ============================================================
+// Page & Image Block Rendering (DOM-based)
+// ============================================================
+function renderPage() {
+  const ps = getPageSize();
+  page.style.width = ps.w + 'mm';
+  page.style.height = ps.h + 'mm';
+  page.style.background = state.bgColor;
+  page.classList.toggle('compact-mode', state.compactFill);
+
+  // Clear old blocks
+  page.querySelectorAll('.img-block').forEach(el => el.remove());
+
+  // Sort by zIndex for correct layering
+  const sorted = [...state.images].sort((a, b) => a.zIndex - b.zIndex);
+
+  for (const item of sorted) {
+    const block = createImageBlock(item);
+    page.appendChild(block);
+  }
+}
+
+function createImageBlock(item) {
+  const block = document.createElement('div');
+  block.className = 'img-block'
+    + (state.selectedId === item.id ? ' selected' : '')
+    + (state.cropEditingId === item.id ? ' crop-editing' : '');
+  block.dataset.id = item.id;
+  block.style.left = item.x + 'mm';
+  block.style.top = item.y + 'mm';
+  block.style.width = item.w + 'mm';
+  block.style.height = item.h + 'mm';
+  block.style.zIndex = item.zIndex;
+
+  const img = document.createElement('img');
+  img.src = item.img.src;
+  img.draggable = false;
+  applyImagePlacement(item, img);
+  block.appendChild(img);
+
+  const cropGrid = document.createElement('div');
+  cropGrid.className = 'crop-grid';
+  block.appendChild(cropGrid);
+
+  const cropLabel = document.createElement('div');
+  cropLabel.className = 'crop-mode-label';
+  cropLabel.textContent = '拖动画面调整取景';
+  block.appendChild(cropLabel);
+
+  // Resize handles (8 directions)
+  for (const dir of ['nw','n','ne','w','e','sw','s','se']) {
+    const handle = document.createElement('div');
+    handle.className = 'resize-handle ' + dir;
+    handle.dataset.handle = dir;
+    block.appendChild(handle);
+  }
+
+  // Size tooltip
+  const tip = document.createElement('div');
+  tip.className = 'size-tip';
+  tip.textContent = `${item.w.toFixed(0)} × ${item.h.toFixed(0)} mm`;
+  block.appendChild(tip);
+
+  return block;
+}
+
+function updateImageBlock(item) {
+  const block = page.querySelector(`.img-block[data-id="${item.id}"]`);
+  if (!block) return;
+  block.style.left = item.x + 'mm';
+  block.style.top = item.y + 'mm';
+  block.style.width = item.w + 'mm';
+  block.style.height = item.h + 'mm';
+  block.style.zIndex = item.zIndex;
+
+  applyImagePlacement(item, block.querySelector('img'));
+
+  const tip = block.querySelector('.size-tip');
+  if (tip) tip.textContent = `${item.w.toFixed(0)} × ${item.h.toFixed(0)} mm`;
+}
+
+function updatePageScale() {
+  const ps = getPageSize();
+  const availW = mainViewport.clientWidth - 40;
+  const availH = mainViewport.clientHeight - 40;
+  // Approximate mm to px: 1mm ≈ 3.78px at 96 DPI
+  const pageWpx = ps.w * 3.78;
+  const pageHpx = ps.h * 3.78;
+  const scale = Math.min(availW / pageWpx, availH / pageHpx, 1);
+
+  page.style.transform = scale < 1 ? `scale(${scale})` : 'none';
+  page.style.transformOrigin = 'top left';
+
+  // Set wrapper to scaled size for proper layout
+  pageWrapper.style.width = (ps.w * 3.78 * scale) + 'px';
+  pageWrapper.style.height = (ps.h * 3.78 * scale) + 'px';
+}
+
+// ============================================================
+// Interaction: Drag Move & Resize
+// ============================================================
+let interaction = null;
+
+page.addEventListener('pointerdown', onPointerDown);
+page.addEventListener('dblclick', e => {
+  const block = e.target.closest('.img-block');
+  if (!block || e.target.closest('.resize-handle')) return;
+  e.preventDefault();
+  const id = +block.dataset.id;
+  selectImage(id);
+  state.cropEditingId = id;
+  updateCropControls();
+});
+page.addEventListener('wheel', e => {
+  const block = e.target.closest('.img-block');
+  if (!block || +block.dataset.id !== state.cropEditingId) return;
+  const item = state.images.find(candidate => candidate.id === state.cropEditingId);
+  if (!item) return;
+  e.preventDefault();
+  const crop = ensureCrop(item);
+  crop.zoom = clamp(crop.zoom * (e.deltaY < 0 ? 1.06 : 0.94), 1, 4);
+  updateImageBlock(item);
+  updateCropControls();
+}, { passive: false });
+document.addEventListener('pointermove', onPointerMove);
+document.addEventListener('pointerup', onPointerUp);
+
+function onPointerDown(e) {
+  // Check resize handle first
+  const handle = e.target.closest('.resize-handle');
+  if (handle) {
+    const block = handle.closest('.img-block');
+    const id = +block.dataset.id;
+    const img = state.images.find(m => m.id === id);
+    if (!img) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const pos = pointerToMm(e);
+    pushHistory();
+    interaction = {
+      type: 'resize', imgId: id, handle: handle.dataset.handle,
+      startX: pos.x, startY: pos.y,
+      origX: img.x, origY: img.y, origW: img.w, origH: img.h,
+      origRatio: img.w / img.h,
+      compactRow: captureCompactRow(img),
+      origMosaicAnchor: state.mosaicAnchor ? { ...state.mosaicAnchor } : null,
+    };
+    selectImage(id);
+    block.style.cursor = handle.style.cursor;
+    return;
+  }
+
+  // Check image block
+  const block = e.target.closest('.img-block');
+  if (block) {
+    const id = +block.dataset.id;
+    const img = state.images.find(m => m.id === id);
+    if (!img) return;
+    e.preventDefault();
+    const pos = pointerToMm(e);
+
+    if (state.cropEditingId === id) {
+      const crop = ensureCrop(img);
+      const placement = getImagePlacement(img, img.w, img.h);
+      pushHistory();
+      interaction = {
+        type: 'crop', imgId: id,
+        startX: pos.x, startY: pos.y,
+        origFocusX: crop.focusX, origFocusY: crop.focusY,
+        placementW: placement.dw, placementH: placement.dh,
+      };
+      block.style.cursor = 'grabbing';
+      return;
+    }
+
+    // Ctrl+click: multi-select toggle
+    if (e.ctrlKey || e.metaKey) {
+      toggleMultiSelect(id);
+      return;
+    }
+
+    pushHistory();
+    interaction = {
+      type: 'move', imgId: id,
+      startX: pos.x, startY: pos.y,
+      origX: img.x, origY: img.y,
+      origPositions: state.selectedIds.length > 1
+        ? state.selectedIds.filter(sid => sid !== id).map(sid => {
+            const si = state.images.find(m => m.id === sid);
+            return si ? { id: sid, x: si.x, y: si.y } : null;
+          }).filter(Boolean)
+        : [],
+    };
+    selectImage(id);
+    bringToFront(id);
+    block.style.cursor = 'grabbing';
+    return;
+  }
+
+  // Clicked on page background — start marquee selection (if on page)
+  if (e.target === page || page.contains(e.target)) {
+    e.preventDefault();
+    const pos = pointerToMm(e);
+    interaction = {
+      type: 'marquee',
+      startX: pos.x, startY: pos.y,
+      origX: pos.x, origY: pos.y,
+    };
+    marquee.style.display = 'block';
+    marquee.style.left = pos.x + 'mm';
+    marquee.style.top = pos.y + 'mm';
+    marquee.style.width = '0mm';
+    marquee.style.height = '0mm';
+    // Don't deselect yet — wait to see if it's a drag or just a click
+    return;
+  }
+
+  // Clicked outside page
+  selectImage(null);
+}
+
+function onPointerMove(e) {
+  if (!interaction) return;
+  e.preventDefault();
+
+  const pos = pointerToMm(e);
+  const dx = pos.x - interaction.startX;
+  const dy = pos.y - interaction.startY;
+
+    // Marquee selection
+  if (interaction.type === 'marquee') {
+    const x1 = Math.min(interaction.startX, pos.x);
+    const y1 = Math.min(interaction.startY, pos.y);
+    const x2 = Math.max(interaction.startX, pos.x);
+    const y2 = Math.max(interaction.startY, pos.y);
+
+    marquee.style.left = x1 + 'mm';
+    marquee.style.top = y1 + 'mm';
+    marquee.style.width = (x2 - x1) + 'mm';
+    marquee.style.height = (y2 - y1) + 'mm';
+    interaction.endX = pos.x;
+    interaction.endY = pos.y;
+
+    // Highlight images that intersect with marquee
+    state.images.forEach(img => {
+      const block = page.querySelector(`.img-block[data-id="${img.id}"]`);
+      if (!block) return;
+      const intersects = !(img.x + img.w <= x1 || img.x >= x2 || img.y + img.h <= y1 || img.y >= y2);
+      block.classList.toggle('multi-selected', intersects);
+    });
+    return;
+  }
+
+  const img = state.images.find(m => m.id === interaction.imgId);
+  if (!img) return;
+
+  const others = state.images.filter(m => m.id !== interaction.imgId);
+
+  if (interaction.type === 'crop') {
+    const crop = ensureCrop(img);
+    crop.focusX = clamp(interaction.origFocusX - dx / Math.max(interaction.placementW, 0.01), 0, 1);
+    crop.focusY = clamp(interaction.origFocusY - dy / Math.max(interaction.placementH, 0.01), 0, 1);
+    updateImageBlock(img);
+    return;
+  } else if (interaction.type === 'move') {
+    img.x = interaction.origX + dx;
+    img.y = interaction.origY + dy;
+
+    // Move all multi-selected images together
+    if (interaction.origPositions) {
+      for (const p of interaction.origPositions) {
+        const si = state.images.find(m => m.id === p.id);
+        if (si) {
+          si.x = p.x + dx;
+          si.y = p.y + dy;
+          updateImageBlock(si);
+        }
+      }
+    }
+
+    // Snap to alignment guides
+    if (snapEnabled) {
+      const snap = snapToGuides(img, others);
+      img.x += snap.dx;
+      img.y += snap.dy;
+      // Apply same snap offset to multi-selected
+      if (interaction.origPositions && (snap.dx || snap.dy)) {
+        for (const p of interaction.origPositions) {
+          const si = state.images.find(m => m.id === p.id);
+          if (si) {
+            si.x += snap.dx;
+            si.y += snap.dy;
+            updateImageBlock(si);
+          }
+        }
+      }
+    }
+  } else if (interaction.type === 'resize') {
+    const h = interaction.handle;
+    const lockRatio = !e.altKey;
+
+    // Draft editing: edge handles change only the selected frame. Nothing
+    // else moves until “应用新布局” is clicked. Corner handles keep the frame
+    // ratio by default; Alt still enables free corner stretching.
+    if (h.length === 1) {
+      resizeFree(img, h, dx, dy, interaction);
+    } else if (lockRatio) {
+      resizeLocked(img, h, dx, dy, interaction);
+    } else {
+      resizeFree(img, h, dx, dy, interaction);
+    }
+
+    // Snap size to nearby images
+    snapSize(img, others, h, interaction);
+    recordLayoutPreference(img, interaction);
+
+  }
+
+  updateImageBlock(img);
+}
+
+function resizeLocked(img, handle, dx, dy, orig) {
+  const ratio = orig.origRatio;
+  const MIN = 5; // mm minimum size
+
+  if (handle === 'se') {
+    const dw = dx;
+    const newW = Math.max(MIN, orig.origW + dw);
+    img.w = newW; img.h = newW / ratio;
+  } else if (handle === 'e') {
+    const newW = Math.max(MIN, orig.origW + dx);
+    img.w = newW; img.h = newW / ratio;
+  } else if (handle === 'w') {
+    const newW = Math.max(MIN, orig.origW - dx);
+    img.x = orig.origX + orig.origW - newW;
+    img.w = newW; img.h = newW / ratio;
+  } else if (handle === 's') {
+    const newH = Math.max(MIN, orig.origH + dy);
+    img.h = newH; img.w = newH * ratio;
+  } else if (handle === 'n') {
+    const newH = Math.max(MIN, orig.origH - dy);
+    img.y = orig.origY + orig.origH - newH;
+    img.h = newH; img.w = newH * ratio;
+  } else if (handle === 'sw') {
+    const dw = -dx;
+    const newW = Math.max(MIN, orig.origW + dw);
+    img.x = orig.origX + orig.origW - newW;
+    img.w = newW; img.h = newW / ratio;
+  } else if (handle === 'ne') {
+    const dw = dx;
+    const newW = Math.max(MIN, orig.origW + dw);
+    img.w = newW; img.h = newW / ratio;
+    img.y = orig.origY + orig.origH - img.h;
+  } else if (handle === 'nw') {
+    const dw = -dx;
+    const newW = Math.max(MIN, orig.origW + dw);
+    img.x = orig.origX + orig.origW - newW;
+    img.w = newW; img.h = newW / ratio;
+    img.y = orig.origY + orig.origH - img.h;
+  }
+}
+
+function resizeFree(img, handle, dx, dy, orig) {
+  const MIN = 5;
+
+  if (handle === 'se') {
+    img.w = Math.max(MIN, orig.origW + dx);
+    img.h = Math.max(MIN, orig.origH + dy);
+  } else if (handle === 'e') {
+    img.w = Math.max(MIN, orig.origW + dx);
+  } else if (handle === 'w') {
+    const newW = Math.max(MIN, orig.origW - dx);
+    img.x = orig.origX + orig.origW - newW;
+    img.w = newW;
+  } else if (handle === 's') {
+    img.h = Math.max(MIN, orig.origH + dy);
+  } else if (handle === 'n') {
+    const newH = Math.max(MIN, orig.origH - dy);
+    img.y = orig.origY + orig.origH - newH;
+    img.h = newH;
+  } else if (handle === 'sw') {
+    const newW = Math.max(MIN, orig.origW - dx);
+    img.x = orig.origX + orig.origW - newW;
+    img.w = newW;
+    img.h = Math.max(MIN, orig.origH + dy);
+  } else if (handle === 'ne') {
+    img.w = Math.max(MIN, orig.origW + dx);
+    const newH = Math.max(MIN, orig.origH - dy);
+    img.y = orig.origY + orig.origH - newH;
+    img.h = newH;
+  } else if (handle === 'nw') {
+    const newW = Math.max(MIN, orig.origW - dx);
+    const newH = Math.max(MIN, orig.origH - dy);
+    img.x = orig.origX + orig.origW - newW;
+    img.y = orig.origY + orig.origH - newH;
+    img.w = newW; img.h = newH;
+  }
+}
+
+function onPointerUp() {
+  if (interaction) {
+    // Finalize marquee selection
+    if (interaction.type === 'marquee') {
+      marquee.style.display = 'none';
+      const ex = interaction.endX || interaction.startX;
+      const ey = interaction.endY || interaction.startY;
+      const x1 = Math.min(interaction.startX, ex);
+      const y1 = Math.min(interaction.startY, ey);
+      const x2 = Math.max(interaction.startX, ex);
+      const y2 = Math.max(interaction.startY, ey);
+
+      // Only count as marquee if dragged a meaningful distance
+      if (x2 - x1 > 1 || y2 - y1 > 1) {
+        const ids = state.images
+          .filter(img => !(img.x + img.w <= x1 || img.x >= x2 || img.y + img.h <= y1 || img.y >= y2))
+          .map(img => img.id);
+
+        if (ids.length > 0) {
+          state.selectedIds = ids;
+          state.selectedId = ids[ids.length - 1];
+          // Update visuals
+          page.querySelectorAll('.img-block').forEach(b => {
+            const bid = +b.dataset.id;
+            b.classList.toggle('selected', bid === state.selectedId);
+            b.classList.toggle('multi-selected', ids.includes(bid) && bid !== state.selectedId);
+          });
+          renderThumbs();
+        } else {
+          selectImage(null);
+        }
+      } else {
+        // Just a click on background — deselect
+        selectImage(null);
+      }
+    }
+
+    interaction = null;
+    page.querySelectorAll('.img-block').forEach(b => b.style.cursor = '');
+    hideGuides();
+  }
+}
+
+// ============================================================
+// Selection & Z-order
+// ============================================================
+function selectImage(id) {
+  if (state.cropEditingId !== null && state.cropEditingId !== id) state.cropEditingId = null;
+  state.selectedId = id;
+  state.selectedIds = id !== null ? [id] : [];
+  // Update selection visual on page
+  page.querySelectorAll('.img-block').forEach(b => {
+    b.classList.toggle('selected', +b.dataset.id === id);
+    b.classList.remove('multi-selected');
+  });
+  renderThumbs();
+  updateCropControls();
+}
+
+function toggleMultiSelect(id) {
+  const idx = state.selectedIds.indexOf(id);
+  if (idx >= 0) {
+    // Remove from selection
+    state.selectedIds.splice(idx, 1);
+    if (state.selectedIds.length === 0) {
+      selectImage(null);
+    } else {
+      state.selectedId = state.selectedIds[state.selectedIds.length - 1];
+      updateSelectionVisuals();
+    }
+  } else {
+    // Add to selection
+    state.selectedIds.push(id);
+    state.selectedId = id;
+    updateSelectionVisuals();
+  }
+}
+
+function updateSelectionVisuals() {
+  page.querySelectorAll('.img-block').forEach(b => {
+    const bid = +b.dataset.id;
+    b.classList.toggle('selected', bid === state.selectedId);
+    b.classList.toggle('multi-selected', state.selectedIds.includes(bid) && bid !== state.selectedId);
+  });
+  renderThumbs();
+  updateCropControls();
+}
+
+function bringToFront(id) {
+  const img = state.images.find(m => m.id === id);
+  if (img) { img.zIndex = state.zCounter++; updateImageBlock(img); }
+}
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if ((state.selectedId !== null || state.selectedIds.length > 0) && document.activeElement === document.body) {
+      e.preventDefault();
+      pushHistory();
+      const toDelete = new Set(state.selectedIds.length ? state.selectedIds : [state.selectedId]);
+      state.images = state.images.filter(m => !toDelete.has(m.id));
+      if (state.mosaicAnchor && toDelete.has(state.mosaicAnchor.id)) state.mosaicAnchor = null;
+      state.layoutVariant = 0;
+      state.layoutDirty = false; state.pendingAnchor = null;
+      state.selectedId = null;
+      state.selectedIds = [];
+      if (state.images.length && state.compactFill) { compactFill({ rebuild: true }); }
+      else if (state.images.length) { autoLayout({ rebuild: true }); refresh(); }
+      else { refresh(); }
+    }
+  }
+  if (e.key === 'Escape') {
+    if (state.cropEditingId !== null) { state.cropEditingId = null; updateCropControls(); }
+    else selectImage(null);
+  }
+});
+
+// ============================================================
+// Full Refresh
+// ============================================================
+function refresh() {
+  const hasImages = state.images.length > 0;
+  emptyState.style.display = hasImages ? 'none' : 'flex';
+  pageWrapper.style.display = hasImages ? 'block' : 'none';
+  thumbSection.style.display = hasImages ? 'block' : 'none';
+
+  btnCompact.disabled = !hasImages;
+  btnRelayout.disabled = !hasImages;
+  btnSnap.disabled = !hasImages;
+  btnSpaceH.disabled = !hasImages || state.images.length < 2;
+  btnClear.disabled = !hasImages;
+  btnPrint.disabled = !hasImages;
+  btnExport.disabled = !hasImages;
+  btnAutoTrim.disabled = !hasImages;
+  btnAutoTrim.textContent = state.images.some(item => item.sourceBounds) ? '恢复原始边缘' : '自动去白边';
+  btnUndo.disabled = undoStack.length === 0;
+  updateLayoutAction();
+  updateCompactButton();
+
+  renderThumbs();
+  renderPage();
+  updatePageScale();
+  updateCropControls();
+}
+
+// ============================================================
+// Export
+// ============================================================
+function exportToCanvas() {
+  const ps = getPageSize();
+  const pxPerMm = state.dpi / 25.4;
+  const canvasW = Math.round(ps.w * pxPerMm);
+  const canvasH = Math.round(ps.h * pxPerMm);
+
+  const offscreen = document.createElement('canvas');
+  offscreen.width = canvasW;
+  offscreen.height = canvasH;
+  const octx = offscreen.getContext('2d');
+
+  // Background
+  octx.fillStyle = state.bgColor;
+  octx.fillRect(0, 0, canvasW, canvasH);
+
+  // Draw images sorted by zIndex
+  const sorted = [...state.images].sort((a, b) => a.zIndex - b.zIndex);
+  for (const item of sorted) {
+    const x = item.x * pxPerMm;
+    const y = item.y * pxPerMm;
+    const w = item.w * pxPerMm;
+    const h = item.h * pxPerMm;
+
+    octx.save();
+    octx.beginPath();
+    octx.rect(x, y, w, h);
+    octx.clip();
+
+    const placement = getImagePlacement(item, w, h);
+    const b = placement.bounds;
+    octx.drawImage(item.img, b.x, b.y, b.w, b.h, x + placement.dx, y + placement.dy, placement.dw, placement.dh);
+    octx.restore();
+  }
+
+  return offscreen;
+}
+
+btnExport.addEventListener('click', () => {
+  const offscreen = exportToCanvas();
+  const link = document.createElement('a');
+  const pageLabel = state.pageSize === 'a4l' ? 'A4横向' : state.pageSize.toUpperCase();
+  link.download = `快速拼版_${pageLabel}_${new Date().toISOString().slice(0, 10)}.png`;
+  link.href = offscreen.toDataURL('image/png');
+  link.click();
+  showStatus('高清图片已保存');
+});
+
+btnPrint.addEventListener('click', () => {
+  const offscreen = exportToCanvas();
+  const dataUrl = offscreen.toDataURL('image/png');
+  const win = window.open('', '_blank');
+  win.document.write(`
+    <html><head><title>拼图打印</title>
+    <style>
+      body{margin:0;display:flex;justify-content:center;align-items:flex-start;min-height:100vh}
+      img{max-width:100%;height:auto}
+      @media print{body{margin:0}img{width:100%;height:auto}}
+    </style></head>
+    <body><img src="${dataUrl}" onload="window.print()"></body></html>
+  `);
+  win.document.close();
+});
+
+// ============================================================
+// Smart Actions: Equal Spacing & Snap Toggle
+// ============================================================
+function equalSpacingHorizontal() {
+  if (state.images.length < 2) return;
+
+  if (state.compactFill && state.rowAssignments.length) {
+    const ps = getPageSize();
+    const innerW = ps.w - state.padding * 2;
+    state.rowAssignments.forEach(row => {
+      const items = row.ids.map(id => state.images.find(item => item.id === id)).filter(Boolean);
+      if (items.length < 2) return;
+      const totalItemW = items.reduce((sum, item) => sum + item.w, 0);
+      const spacing = Math.max(0, (innerW - totalItemW) / (items.length - 1));
+      let x = state.padding;
+      items.forEach(item => { item.x = x; x += item.w + spacing; updateImageBlock(item); });
+    });
+    return;
+  }
+
+  // Sort images by left edge X
+  const sorted = [...state.images].sort((a, b) => a.x - b.x);
+
+  // Find the bounding box
+  const leftMost = Math.min(...sorted.map(i => i.x));
+  const rightMost = Math.max(...sorted.map(i => i.x + i.w));
+  const totalW = rightMost - leftMost;
+  const gap = state.gap;
+
+  const n = sorted.length;
+  const totalItemW = sorted.reduce((s, i) => s + i.w, 0);
+  const totalGap = totalW - totalItemW;
+  const spacing = Math.max(0, totalGap / (n - 1));
+
+  let x = leftMost;
+  for (const img of sorted) {
+    img.x = x;
+    x += img.w + spacing;
+  }
+
+  refresh();
+}
+
+btnSnap.addEventListener('click', () => {
+  snapEnabled = !snapEnabled;
+  btnSnap.textContent = snapEnabled ? '🧲 吸附' : '🧲 无吸附';
+  btnSnap.classList.toggle('btn-accent-outline', snapEnabled);
+  btnSnap.classList.toggle('btn-outline', !snapEnabled);
+});
+
+btnSpaceH.addEventListener('click', () => { pushHistory(); equalSpacingHorizontal(); });
+
+// ============================================================
+// Control Events
+// ============================================================
+for (const control of [gapSlider, padSlider, rowSlider, bgColorPicker, dpiSlider, cropZoom]) {
+  control.addEventListener('pointerdown', () => pushHistory());
+}
+
+columnsSelect.addEventListener('change', () => {
+  pushHistory();
+  state.columns = +columnsSelect.value;
+  state.mosaicAnchor = null;
+  state.layoutVariant = 0;
+  state.layoutDirty = false; state.pendingAnchor = null;
+  if (state.images.length) {
+    if (state.compactFill) compactFill({ rebuild: true });
+    else { autoLayout({ rebuild: true }); refresh(); }
+  }
+});
+
+gapSlider.addEventListener('input', () => {
+  state.gap = +gapSlider.value; gapVal.textContent = state.gap + 'mm';
+  if (state.images.length) {
+    if (state.layoutDirty) { showStatus('点击“应用新布局”后更新间距'); }
+    else if (state.compactFill) { applyCompactLayout(); state.images.forEach(updateImageBlock); }
+    else { autoLayout({ rebuild: false }); state.images.forEach(updateImageBlock); }
+  }
+});
+padSlider.addEventListener('input', () => {
+  state.padding = +padSlider.value; padVal.textContent = state.padding + 'mm';
+  if (state.images.length) {
+    if (state.layoutDirty) { showStatus('点击“应用新布局”后更新边距'); }
+    else if (state.compactFill) { applyCompactLayout(); state.images.forEach(updateImageBlock); }
+    else { autoLayout({ rebuild: false }); state.images.forEach(updateImageBlock); }
+  }
+});
+rowSlider.addEventListener('input', () => {
+  if (state.compactFill) {
+    state.compactZoom = +rowSlider.value;
+    rowVal.textContent = state.compactZoom + '%';
+    if (state.images.length && state.layoutDirty) showStatus('点击“应用新布局”后更新');
+    else if (state.images.length) { applyCompactLayout(); state.images.forEach(updateImageBlock); }
+  } else {
+    state.rowHeight = +rowSlider.value;
+    rowVal.textContent = state.rowHeight + 'mm';
+    if (state.images.length) { autoLayout({ rebuild: false }); state.images.forEach(updateImageBlock); }
+  }
+});
+bgColorPicker.addEventListener('input', () => {
+  state.bgColor = bgColorPicker.value;
+  page.style.background = state.bgColor;
+});
+fitModeSelect.addEventListener('change', () => {
+  pushHistory();
+  state.fitMode = fitModeSelect.value;
+  state.images.forEach(updateImageBlock);
+});
+
+btnAutoTrim.addEventListener('click', () => {
+  if (!state.images.length) return;
+  pushHistory();
+  const restoring = state.images.some(item => item.sourceBounds);
+  let changed = 0;
+  if (restoring) {
+    state.images.forEach(item => {
+      if (item.sourceBounds) { delete item.sourceBounds; changed++; }
+      delete item._layoutWeight;
+    });
+  } else {
+    state.images.forEach(item => {
+      const bounds = detectWhitespaceBounds(item);
+      if (bounds) { item.sourceBounds = bounds; changed++; }
+      delete item._layoutWeight;
+    });
+  }
+  state.mosaicAnchor = null;
+  state.layoutVariant = 0;
+  state.layoutDirty = false; state.pendingAnchor = null;
+  if (changed) compactFill({ rebuild: true });
+  else refresh();
+  showStatus(restoring ? '已恢复原始边缘' : (changed ? `已处理 ${changed} 张图片` : '没有检测到明显白边'));
+});
+
+btnCropMode.addEventListener('click', () => {
+  const item = getSelectedImage();
+  if (!item) return;
+  setCropEditing(item.id);
+});
+
+btnCropReset.addEventListener('click', () => {
+  const item = getSelectedImage();
+  if (!item) return;
+  pushHistory();
+  item.crop = { zoom: 1, focusX: 0.5, focusY: 0.5 };
+  cropZoom.value = '100';
+  cropZoomVal.textContent = '100%';
+  updateImageBlock(item);
+});
+
+cropZoom.addEventListener('input', () => {
+  const item = getSelectedImage();
+  if (!item) return;
+  ensureCrop(item).zoom = +cropZoom.value / 100;
+  cropZoomVal.textContent = cropZoom.value + '%';
+  updateImageBlock(item);
+});
+
+itemFitMode.addEventListener('change', () => {
+  const item = getSelectedImage();
+  if (!item) return;
+  pushHistory();
+  item.fitMode = itemFitMode.value;
+  updateImageBlock(item);
+});
+pageSelect.addEventListener('change', () => {
+  pushHistory();
+  state.pageSize = pageSelect.value;
+  state.layoutDirty = false; state.pendingAnchor = null;
+  if (state.images.length) {
+    if (state.compactFill) { compactFill({ rebuild: true }); } else { autoLayout({ rebuild: true }); refresh(); }
+  }
+  else { updatePageScale(); }
+});
+dpiSlider.addEventListener('input', () => {
+  state.dpi = +dpiSlider.value; dpiVal.textContent = state.dpi;
+});
+
+btnCompact.addEventListener('click', () => {
+  pushHistory();
+  if (state.compactFill) {
+    // Exit compact mode — keep current positions
+    state.compactFill = false;
+    state.rowAssignments = [];
+    refresh();
+  } else {
+    compactFill();
+  }
+});
+btnRelayout.addEventListener('click', () => {
+  if (!state.images.length) return;
+  pushHistory();
+  state.mosaicAnchor = state.pendingAnchor ? { ...state.pendingAnchor } : null;
+  state.compactZoom = 100;
+  state.layoutVariant = 0;
+  state.layoutDirty = false;
+  state.pendingAnchor = null;
+  compactFill({ rebuild: true });
+  showStatus('已应用新布局');
+});
+btnClear.addEventListener('click', () => {
+  if (!state.images.length) return;
+  pushHistory();
+  state.images = []; state.selectedId = null; state.selectedIds = [];
+  state.rowAssignments = []; state.autoRowCount = null;
+  state.compactFill = false; state.compactZoom = 100; state.cropEditingId = null;
+  state.layoutVariant = 0; state.mosaicAnchor = null;
+  state.layoutDirty = false; state.pendingAnchor = null;
+  refresh();
+});
+
+// Window resize
+window.addEventListener('resize', () => updatePageScale());
+
+// Init
+initGuideLines();
+btnSnap.textContent = '🧲 吸附';
+btnSnap.classList.add('btn-accent-outline');
+updatePageScale();
+</script>
+</body>
+</html>
